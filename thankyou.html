@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Thank You - ClickFlare Result</title>
+  <style>
+    body{ font-family: Arial, sans-serif; padding:36px; background:#fff; color:#222; }
+    h1{ color:#2c3e50; }
+    pre{ background:#f6f7f8; padding:12px; border-radius:6px; }
+    .muted{ color:#666; }
+  </style>
+</head>
+<body>
+  <h1>Thank You</h1>
+  <p class="muted">This page shows the query parameters that arrived (useful to verify PageSense params).</p>
+  <pre id="qparams">Loading...</pre>
+
+  <script>
+    const params = Object.fromEntries(new URLSearchParams(window.location.search).entries());
+    document.getElementById('qparams').textContent = JSON.stringify(params, null, 2) || "No query params found";
+  </script>
+</body>
+</html>

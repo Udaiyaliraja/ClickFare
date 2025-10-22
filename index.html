@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Load your PageSense script -->
+  <script src="https://cdn-in.pagesense.io/js/udaiyali/1b14d11076b841fe9ae820bbf8bda69a.js"></script>
+  <script>src = "scripts/pagesense-utils.js"</script>
+  <title>PageSense A/B Test — ClickFlare Demo</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 36px; background:#f7f8fa; color:#222; }
+    h1 { color:#c0392b; }
+    .btn { display:inline-block; padding:12px 18px; margin:8px; border-radius:6px; color:#fff; background:#0b75d1; text-decoration:none; cursor:pointer; border:none; }
+    .btn.secondary { background:#d35400; }
+    pre { background:#f0f0f0; padding:12px; border-radius:6px; overflow:auto; }
+    .muted { color:#666; font-size:14px; }
+    hr { margin:18px 0; border:0; border-top:1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <h1>Welcome to the A/B Test Page</h1>
+  <p class="muted">This page demonstrates appending PageSense A/B experiment details to ClickFlare tracking URLs.</p>
+
+  <!-- ClickFlare test buttons -->
+  <button id="adButton" class="btn">ClickFlare Auto Test</button>
+  <button 
+    id="anchorButton" 
+    class="btn secondary" 
+    click-outbound_url="thankyou.html?source=clickflare">
+    ClickFlare Redirect
+  </button>
+
+  <hr>
+
+  <p class="muted">Open <code>Console</code> to view test results and logs.</p>
+
+  <!-- ====== PageSenseUtils (Shared Function) ====== -->
+	<script>
+	/**
+	 * PageSense A/B Test Query Parameter Appender
+	 * --------------------------------------------
+	 * Defines a global namespace `PageSenseUtils` and exposes one public method:
+	 * 
+	 *     PageSenseUtils.appendPageSenseExperimentParams(url)
+	 *
+	 * This method appends PageSense A/B test details (Experiment Name, Variation Name,
+	 * and Visitor ID) as query parameters to a provided URL string.
+	 *
+	 * Supported Cases:
+	 * - Input URLs with or without a scheme (http, https)
+	 * - Valid domain formats (example.com, www.example.org/path)
+	 * - Handles PageSense not loaded, no running experiment, or incomplete data cases gracefully
+	 * - Returns the original URL unchanged for invalid or malformed inputs
+	 *
+	 * Typical Use:
+	 * Call this function inside a click handler to dynamically update tracking URLs.
+	 *
+	 * Example:
+	 * const updatedUrl = PageSenseUtils.appendPageSenseExperimentParams("https://example.com/offer");
+	 * window.location.href = updatedUrl;
+	 */
+	(function (global) {
+	  // Ensure the global namespace exists
+	  if (!global.PageSenseUtils) {
+	    global.PageSenseUtils = {};
+	  }
+	
+	  /**
+	   * Appends active PageSense A/B test identifiers as query parameters to a given URL.
+	   * The function is defensive, non-destructive, and safely returns the original URL
+	   * if validation or data checks fail.
+	   *
+	   * @function PageSenseUtils.appendPageSenseExperimentParams
+	   * @param {string} inputUrl - The input URL, with or without a scheme.
+	   * @returns {string} The updated URL with appended A/B test parameters,
+	   *                   or the original URL if unchanged.
+	   */
+	  global.PageSenseUtils.appendPageSenseExperimentParams = function (inputUrl) {
+	    try {
+	      // ------------------------------------------------------------
+	      // Validate the input
+	      // ------------------------------------------------------------
+	      if (typeof inputUrl !== "string") {
+	        console.warn("[PageSense] URL must be a string. Returning original value.");
+	        return inputUrl;
+	      }
+	
+	      const trimmedUrl = inputUrl.trim();
+	
+	      // Reject empty or malformed inputs
+	      if (!trimmedUrl || /\s/.test(trimmedUrl) || /[{}|\\^`<>]/.test(trimmedUrl)) {
+	        console.warn("[PageSense] Invalid or malformed URL provided. Returning original value.");
+	        return inputUrl;
+	      }
+	
+	      // ------------------------------------------------------------
+	      // Validate the URL
+	      // ------------------------------------------------------------
+	      // If URL lacks a scheme, temporarily prepend "https://" for validation.
+	      const hasScheme = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmedUrl);
+	      const validationUrl = hasScheme ? trimmedUrl : "https://" + trimmedUrl;
+	
+	      try {
+	        const parsedUrl = new URL(validationUrl);
+	
+	        // Restrict allowed schemes if explicitly provided
+	        if (hasScheme) {
+	          const allowedSchemes = ["http:", "https:"];
+	          if (!allowedSchemes.includes(parsedUrl.protocol)) {
+	            console.warn("[PageSense] Unsupported URL scheme detected. Returning original value.");
+	            return inputUrl;
+	          }
+	        }
+	
+	        // Basic hostname validation
+	        if (!parsedUrl.hostname.includes(".") || parsedUrl.hostname.startsWith(".") || parsedUrl.hostname.endsWith(".")) {
+	          console.warn("[PageSense] Invalid hostname in URL. Returning original value.");
+	          return inputUrl;
+	        }
+	      } catch {
+	        console.warn("[PageSense] Invalid URL structure. Returning original value.");
+	        return inputUrl;
+	      }
+	
+	      // ------------------------------------------------------------
+	      // Check for PageSense Script Availability
+	      // ------------------------------------------------------------
+	      if (!global.zps) {
+	        console.info("[PageSense] PageSense script not loaded. Returning original URL unchanged.");
+	        return inputUrl;
+	      }
+	
+	      if (typeof global.zps.getRunningABExperiments !== "function") {
+	        console.info("[PageSense] PageSense A/B API unavailable. Returning original URL unchanged.");
+	        return inputUrl;
+	      }
+	
+	      // ------------------------------------------------------------
+	      // Retrieve and Validate Active A/B Experiment
+	      // ------------------------------------------------------------
+	      const activeExperiments = global.zps.getRunningABExperiments();
+	      if (!Array.isArray(activeExperiments) || activeExperiments.length === 0) {
+	        console.info("[PageSense] No running A/B test found. Returning original URL unchanged.");
+	        return inputUrl;
+	      }
+	
+	      const currentExperiment = activeExperiments[0];
+	      const { experiment_name: experimentName, variation_name: variationName, visitor_id: visitorId } = currentExperiment || {};
+	
+	      // Make sure all the fields are present
+	      if (!experimentName || !variationName || !visitorId) {
+	        console.warn("[PageSense] Incomplete experiment data. Returning original URL.");
+	        return inputUrl;
+	      }
+	
+	      // ------------------------------------------------------------
+	      // Append the PageSense A/B Test Parameters
+	      // ------------------------------------------------------------
+	      const [baseUrl, queryPart] = trimmedUrl.split("?");
+	      const queryParams = new URLSearchParams(queryPart || "");
+	
+	      // Remove old PageSense parameters if already present
+	      ["experiment_name", "variation_name", "visitor_id"].forEach(param => queryParams.delete(param));
+	
+	      // Add the latest PageSense parameters
+	      queryParams.set("experiment_name", experimentName);
+	      queryParams.set("variation_name", variationName);
+	      queryParams.set("visitor_id", visitorId);
+	
+	      // Construct the final URL string
+	      const finalUrl = baseUrl + "?" + queryParams.toString();
+	
+	      console.debug("[PageSense] A/B test parameters appended successfully.");
+	      return finalUrl;
+	
+	    } catch (error) {
+	      // Fail-safe: return the original URL if anything unexpected occurs
+	      console.error("[PageSense] Unexpected error while appending A/B test parameters:", error);
+	      return inputUrl;
+	    }
+	  };
+	
+	  // Initialisation message
+	  console.info("[PageSense] PageSenseUtils initialised and ready for use.");
+	})(window);
+	</script>
+
+  <!-- ====== Integration and Test Logic ====== -->
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    console.info("[TestPage] DOM loaded, initializing test handlers...");
+
+    // ---------------------------------------------
+    // Button 1: Automatic Function Test
+    // ---------------------------------------------
+    document.getElementById("adButton").addEventListener("click", function () {
+      console.group("[Test] Automatic Appender Function Validation");
+      const testInputs = [
+        "https://example.com/page",
+        "example.com",
+        "thankyou.html?source=test",
+        "not a valid URL",
+        "ftp://invalid-scheme.com"
+      ];
+      testInputs.forEach((url) => {
+        const output = PageSenseUtils.appendPageSenseExperimentParams(url);
+        console.log("Input:", url, "\nOutput:", output, "\n---");
+      });
+      console.groupEnd();
+      alert("Automatic Appender Function Test Completed! Check console for results.");
+    });
+
+    // ---------------------------------------------
+    // Button 2: Append Params and Redirect
+    // ---------------------------------------------
+    document.getElementById("anchorButton").addEventListener("click", function (event) {
+      console.group("[Test] Anchor Button Click - Redirect with Query Parameters");
+
+      // Read redirect URL from custom attribute
+      const baseRedirectUrl = event.currentTarget.getAttribute("click-outbound_url");
+
+      if (!baseRedirectUrl) {
+        console.warn("[Test] No redirect URL defined for this button (missing click-outbound_url).");
+        console.groupEnd();
+        return;
+      }
+
+      const updatedRedirectUrl = PageSenseUtils.appendPageSenseExperimentParams(baseRedirectUrl);
+
+      console.log("Original URL:", baseRedirectUrl);
+      console.log("Redirecting to updated URL:", updatedRedirectUrl);
+      console.groupEnd();
+
+      alert("Redirecting to:\n" + updatedRedirectUrl);
+      window.location.href = updatedRedirectUrl;
+    });
+
+  });
+  </script>
+</body>
+</html>
